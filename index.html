@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>重置雷达</title>
+<meta name="description" content="Codex 与 Claude Code 的额度重置记录，浏览器里实时读取，每分钟刷新。非官方。">
+<style>
+/* Layout: one column; live header, two product cards side by side, 90-day strip, merged log. Strict black/white like mingjuntx. */
+:root {
+  --bg: #ffffff; --surface: #ffffff; --fg: #0a0a0a; --muted: #6b6b6b; --faint: #a3a3a3;
+  --line: #e6e6e6; --hover: #f3f3f3; --inv-bg: #0a0a0a; --inv-fg: #ffffff;
+  --ok: #1f9d55; --bad: #d4351c;
+  --font-display: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", serif;
+  --font-body: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0a0a0a; --surface: #111111; --fg: #f5f5f5; --muted: #9a9a9a; --faint: #5c5c5c;
+    --line: #262626; --hover: #1a1a1a; --inv-bg: #f5f5f5; --inv-fg: #0a0a0a; --ok: #3ccf7a; --bad: #ff6a4d; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.7 var(--font-body); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; border-radius: 4px; }
+main { max-width: 960px; margin: 0 auto; padding-block: 48px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, p { margin: 0; }
+h1 { font: 900 clamp(2rem, 5vw, 2.75rem)/1.2 var(--font-display); text-wrap: balance; }
+
+.head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 28px; }
+.head .sub { color: var(--muted); margin-top: 6px; }
+.live { display: inline-flex; align-items: center; gap: 8px; font: 500 0.8125rem/1 var(--font-mono); color: var(--muted); padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; white-space: nowrap; }
+.live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 2s ease-in-out infinite; }
+.live.stale::before { background: var(--bad); animation: none; }
+@keyframes pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .live::before { animation: none; } }
+
+.cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 36px; }
+@media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
+.card { border: 1px solid var(--line); border-radius: 12px; padding: 24px; display: grid; gap: 18px; background: var(--surface); min-width: 0; align-content: start; }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.top h2 { font: 600 1.25rem/1.3 var(--font-mono); letter-spacing: -0.01em; }
+.pill { display: inline-flex; align-items: center; gap: 7px; font: 500 0.75rem/1 var(--font-body); padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.pill::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.pill.ok::before { background: var(--ok); }
+.pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--bg)); }
+.pill.bad::before { background: var(--bad); }
+.big { display: grid; gap: 4px; }
+.big .label { font-size: 0.8125rem; color: var(--muted); }
+.big .value { font: 600 clamp(2rem, 6vw, 3rem)/1.1 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.big .value small { font: 500 1rem var(--font-body); color: var(--muted); letter-spacing: 0; margin: 0 6px 0 2px; }
+.big .when { font-size: 0.875rem; color: var(--muted); }
+.big .when a, .note a { text-underline-offset: 3px; }
+.note { font-size: 0.875rem; color: var(--muted); border-left: 2px solid var(--line); padding-left: 12px; overflow-wrap: anywhere; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); padding-top: 14px; margin: 0; }
+.stats div { display: grid; gap: 2px; padding-right: 12px; min-width: 0; }
+.stats div + div { border-left: 1px solid var(--line); padding-left: 16px; }
+.stats dt { font-size: 0.75rem; color: var(--faint); }
+.stats dd { margin: 0; font: 600 1.125rem/1.3 var(--font-mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stats dd a { text-decoration: none; font-size: 0.9375rem; }
+.stats dd a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.section-head h2 { font-size: 1.125rem; }
+.legend { list-style: none; margin: 0; padding: 0; display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.75rem; color: var(--muted); }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+.legend svg { width: 12px; height: 12px; }
+.strip { border: 1px solid var(--line); border-radius: 12px; padding: 12px 8px 4px; overflow-x: auto; margin-bottom: 36px; }
+.strip svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.m-all { fill: var(--fg); }
+.m-partial, .m-banked { fill: var(--bg); stroke: var(--fg); stroke-width: 1.5; }
+.m-change { stroke: var(--muted); stroke-width: 2; }
+.strip .lane, .strip .tick { stroke: var(--line); stroke-width: 1; }
+.strip .tick { stroke-dasharray: 2 3; }
+.strip .today { stroke: var(--fg); stroke-width: 1; }
+.strip text { font: 500 11px var(--font-mono); fill: var(--muted); }
+.strip text.lane-name { font-weight: 600; font-size: 12px; fill: var(--fg); }
+
+.log { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.log li { display: grid; grid-template-columns: 9.5rem 6.5rem minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 13px 4px; border-bottom: 1px solid var(--line); }
+.log time { font: 0.8125rem var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.log .who { font: 600 0.8125rem var(--font-mono); }
+.log .what { min-width: 0; color: var(--muted); font-size: 0.9375rem; overflow-wrap: anywhere; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font: 500 0.75rem/1 var(--font-mono); padding: 5px 9px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); margin-right: 8px; vertical-align: 1px; }
+.chip.k-all { background: var(--inv-bg); color: var(--inv-fg); border-color: var(--inv-bg); }
+.log a.src { font-size: 0.8125rem; color: var(--muted); white-space: nowrap; }
+.log a.src:hover { color: var(--fg); }
+@media (max-width: 720px) {
+  .log li { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .log .what { grid-column: 1 / -1; grid-row: 2; }
+}
+.more { margin-top: 12px; font: 500 0.875rem/1 var(--font-body); padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); cursor: pointer; }
+.more:hover { border-color: var(--fg); }
+
+footer { margin-top: 36px; display: grid; gap: 8px; font-size: 0.8125rem; color: var(--faint); }
+footer a { color: var(--muted); }
+.health { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px 16px; flex-wrap: wrap; font-family: var(--font-mono); font-size: 0.75rem; }
+.health .fail { color: var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <header class="head">
+    <div>
+      <h1>重置雷达</h1>
+      <p class="sub">Codex 与 Claude Code 的额度重置记录 · 非官方 · 时间为北京时间</p>
+    </div>
+    <span class="live" id="live">连接中…</span>
+  </header>
+
+  <div class="cards" id="cards" aria-live="polite"></div>
+
+  <section aria-labelledby="strip-title">
+    <div class="section-head">
+      <h2 id="strip-title">近 90 天</h2>
+      <ul class="legend" aria-label="图例">
+        <li><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" class="m-all"/></svg>全员重置</li>
+        <li><svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4" class="m-partial"/></svg>部分重置</li>
+        <li><svg viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" class="m-banked"/></svg>重置卡</li>
+        <li><svg viewBox="0 0 12 12" aria-hidden="true"><line x1="6" y1="1" x2="6" y2="11" class="m-change"/></svg>限额调整</li>
+      </ul>
+    </div>
+    <div class="strip" id="strip"></div>
+  </section>
+
+  <section aria-labelledby="log-title">
+    <div class="section-head"><h2 id="log-title">记录</h2></div>
+    <ul class="log" id="log"></ul>
+    <button class="more" type="button" id="more" hidden>显示更多</button>
+  </section>
+
+  <footer>
+    <ul class="health" id="health" aria-label="数据源状态"></ul>
+    <p>数据来源：<a href="https://claude-resets.com/" target="_blank" rel="noopener noreferrer">claude-resets.com</a>（跟踪 @ClaudeDevs 与 @thsottiaux）、<a href="https://tokenusage.dev/resets" target="_blank" rel="noopener noreferrer">tokenusage.dev</a>（跟踪 @thsottiaux）、<a href="https://status.openai.com" target="_blank" rel="noopener noreferrer">OpenAI</a> 与 <a href="https://status.claude.com" target="_blank" rel="noopener noreferrer">Claude</a> 官方状态页、GitHub 发布记录。两个来源对同一次 Codex 重置有时会引用不同的帖子，相隔 12 小时内的记录合并为一次，以最早的时间为准。一切以原帖为准。</p>
+    <p>由 <a href="https://x.com/mingjuntx" target="_blank" rel="noopener noreferrer">mingjuntx</a> 制作</p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  var DAY = 86400000, NS = 'http://www.w3.org/2000/svg';
+  var KIND = { all: '全员重置', partial: '部分重置', banked: '重置卡', change: '限额调整' };
+  var PRODUCTS = [
+    { key: 'codex', name: 'Codex', status: 'https://status.openai.com', component: 'Codex in ChatGPT Desktop', repo: 'openai/codex' },
+    { key: 'claude', name: 'Claude Code', status: 'https://status.claude.com', component: 'Claude Code', repo: 'anthropics/claude-code' }
+  ];
+  var state = { events: { codex: [], claude: [] }, status: {}, release: {}, health: {}, checkedAt: null };
+  var logLimit = 30;
+
+  function getJSON(url) {
+    return fetch(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+  }
+  function mark(name, ok) { state.health[name] = { ok: ok, at: Date.now() }; }
+
+  // claude-resets carries both products with the original wording; tokenusage often spots Codex resets first.
+  function loadResets() {
+    var a = getJSON('https://claude-resets.com/api/resets').then(function (j) { mark('claude-resets', true); return j; }, function () { mark('claude-resets', false); return null; });
+    var b = getJSON('https://tokenusage.dev/api/resets').then(function (j) { mark('tokenusage', true); return j; }, function () { mark('tokenusage', false); return null; });
+    return Promise.all([a, b]).then(function (res) {
+      var cr = res[0], tu = res[1];
+      if (cr && cr.providers) {
+        if (cr.providers.claude) state.events.claude = cr.providers.claude.events.map(function (e) { return normalize(e, 'claude'); });
+        if (cr.providers.codex) state.events.codex = cr.providers.codex.events.map(function (e) { return normalize(e, 'codex'); });
+      }
+      if (tu && tu.resets) {
+        var extra = tu.resets.map(function (r) {
+          return { at: Date.parse(r.postedAt), kind: r.resetType === 'banked' ? 'banked' : 'all', scope: '', note: '', url: r.url };
+        });
+        state.events.codex = mergeCodex(state.events.codex, extra);
+      }
+    });
+  }
+
+  function normalize(e, product) {
+    var kind;
+    if (e.kind === 'policy') kind = 'change';
+    else if (e.resetType === 'banked') kind = 'banked';
+    else if (product === 'codex' || !e.scope || e.scope === 'all') kind = 'all';
+    else kind = 'partial';
+    return { at: Date.parse(e.date), kind: kind, scope: e.scope && e.scope !== 'all' ? e.scope : '', note: e.note || '', url: e.url };
+  }
+
+  // Same kind within 12 hours = one reset. Keep the earliest time and the first note we have.
+  function mergeCodex(main, extra) {
+    var all = main.concat(extra).sort(function (a, b) { return a.at - b.at; });
+    var out = [];
+    all.forEach(function (e) {
+      var hit = null;
+      for (var i = out.length - 1; i >= 0 && e.at - out[i].at < 12 * 3600000; i--) {
+        if (out[i].kind === e.kind) { hit = out[i]; break; }
+      }
+      if (!hit) { out.push(Object.assign({}, e)); return; }
+      if (!hit.note && e.note) { hit.note = e.note; hit.url = e.url; }
+    });
+    return out;
+  }
+
+  function loadStatus() {
+    return Promise.all(PRODUCTS.map(function (p) {
+      return getJSON(p.status + '/api/v2/summary.json').then(function (j) {
+        var comp = (j.components || []).filter(function (c) { return c.name === p.component; })[0];
+        state.status[p.key] = {
+          component: comp ? comp.status : (j.status && j.status.indicator === 'none' ? 'operational' : 'unknown'),
+          incidents: (j.incidents || []).filter(function (i) { return i.status !== 'resolved'; }).map(function (i) { return i.name; })
+        };
+        mark(p.key === 'codex' ? 'OpenAI 状态页' : 'Claude 状态页', true);
+      }, function () { mark(p.key === 'codex' ? 'OpenAI 状态页' : 'Claude 状态页', false); });
+    }));
+  }
+
+  // GitHub allows 60 unauthenticated requests an hour per visitor, so releases refresh every 30 minutes.
+  function loadReleases() {
+    return Promise.all(PRODUCTS.map(function (p) {
+      return getJSON('https://api.github.com/repos/' + p.repo + '/releases?per_page=15').then(function (list) {
+        var r = list.filter(function (x) { return !x.prerelease && !x.draft; })[0] || list[0];
+        if (r) state.release[p.key] = { tag: (r.name || r.tag_name).replace(/^rust-v|^v/, ''), url: r.html_url };
+        mark('GitHub', true);
+      }, function () { mark('GitHub', false); });
+    }));
+  }
+
+  function fmt(t, withYear) {
+    return new Date(t).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false,
+      year: withYear ? 'numeric' : undefined, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-');
+  }
+  function node(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; }
+  function link(href, text, cls) { var a = node('a', cls, text); a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
+  function svg(tag, attrs, text) { var n = document.createElementNS(NS, tag); for (var k in attrs) n.setAttribute(k, attrs[k]); if (text) n.textContent = text; return n; }
+  function sorted(key) { return state.events[key].slice().sort(function (a, b) { return b.at - a.at; }); }
+  function counted(list) { return list.filter(function (e) { return e.kind === 'all' || e.kind === 'partial'; }); }
+
+  var sinceEls = [];
+  function renderCards() {
+    var box = document.getElementById('cards');
+    box.textContent = '';
+    sinceEls = [];
+    var now = Date.now();
+    PRODUCTS.forEach(function (p) {
+      var list = sorted(p.key), real = counted(list), last = real[0];
+      var c = node('article', 'card');
+      var top = node('div', 'top');
+      top.appendChild(node('h2', null, p.name));
+      var st = state.status[p.key];
+      var pill = link(p.status, '', 'pill');
+      if (!st) pill.textContent = '状态未知';
+      else if (st.component === 'operational' && !st.incidents.length) { pill.classList.add('ok'); pill.textContent = '服务正常'; }
+      else { pill.classList.add('bad'); pill.textContent = st.incidents[0] ? '故障：' + st.incidents[0] : '服务异常'; pill.title = pill.textContent; }
+      top.appendChild(pill);
+      c.appendChild(top);
+
+      var big = node('div', 'big');
+      big.appendChild(node('span', 'label', '距上次重置'));
+      var v = node('span', 'value', '—');
+      big.appendChild(v);
+      if (last) {
+        sinceEls.push({ el: v, at: last.at });
+        var when = node('span', 'when', fmt(last.at) + ' · ' + KIND[last.kind] + (last.scope ? '（' + last.scope + '）' : '') + ' · ');
+        when.appendChild(link(last.url, '原帖'));
+        big.appendChild(when);
+      }
+      c.appendChild(big);
+      if (last && last.note) c.appendChild(node('p', 'note', last.note));
+
+      var r90 = real.filter(function (e) { return now - e.at <= 90 * DAY; }).map(function (e) { return e.at; }).sort(function (a, b) { return a - b; });
+      var gaps = [];
+      for (var i = 1; i < r90.length; i++) gaps.push((r90[i] - r90[i - 1]) / DAY);
+      gaps.sort(function (a, b) { return a - b; });
+      var med = gaps.length ? (gaps.length % 2 ? gaps[(gaps.length - 1) / 2] : (gaps[gaps.length / 2 - 1] + gaps[gaps.length / 2]) / 2) : null;
+      var r30 = real.filter(function (e) { return now - e.at <= 30 * DAY; }).length;
+
+      var dl = node('dl', 'stats');
+      function stat(dt, dd) { var w = node('div'); w.appendChild(node('dt', null, dt)); var x = node('dd'); if (typeof dd === 'string') x.textContent = dd; else x.appendChild(dd); w.appendChild(x); dl.appendChild(w); }
+      stat('近 30 天重置', r30 + ' 次');
+      stat('间隔中位数', med === null ? '—' : med.toFixed(1) + ' 天');
+      var rel = state.release[p.key];
+      stat('最新版本', rel ? link(rel.url, rel.tag) : '—');
+      c.appendChild(dl);
+      box.appendChild(c);
+    });
+    tick();
+  }
+
+  // Ticks every second: under a day shows h:m:s, beyond that days and hours.
+  function tick() {
+    var now = Date.now();
+    sinceEls.forEach(function (s) {
+      var ms = Math.max(0, now - s.at), el = s.el;
+      el.textContent = '';
+      function part(n, unit) { el.appendChild(document.createTextNode(n)); el.appendChild(node('small', null, unit)); }
+      if (ms < DAY) {
+        part(Math.floor(ms / 3600000), '时');
+        part(String(Math.floor(ms / 60000) % 60).padStart(2, '0'), '分');
+        part(String(Math.floor(ms / 1000) % 60).padStart(2, '0'), '秒');
+      } else {
+        part(Math.floor(ms / DAY), '天');
+        part(Math.floor(ms / 3600000) % 24, '小时');
+      }
+    });
+  }
+
+  function renderStrip() {
+    var W = 900, H = 112, L = 100, R = 16, T = 10, lane = 34;
+    var now = Date.now(), from = now - 90 * DAY;
+    var x = function (t) { return L + (t - from) / (now - from) * (W - L - R); };
+    var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': '近 90 天 Codex 和 Claude Code 的重置分布' });
+    for (var d = 0; d <= 90; d += 15) {
+      var t = now - d * DAY, xx = x(t);
+      s.appendChild(svg('line', { x1: xx, x2: xx, y1: T, y2: T + lane * 2, class: d === 0 ? 'today' : 'tick' }));
+      s.appendChild(svg('text', { x: xx, y: T + lane * 2 + 18, 'text-anchor': d === 0 ? 'end' : 'middle' },
+        d === 0 ? '今天' : new Date(t).toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai', month: 'numeric', day: 'numeric' })));
+    }
+    PRODUCTS.forEach(function (p, i) {
+      var cy = T + lane * i + lane / 2;
+      s.appendChild(svg('line', { x1: L, x2: W - R, y1: cy, y2: cy, class: 'lane' }));
+      s.appendChild(svg('text', { x: 4, y: cy + 4, class: 'lane-name' }, p.name));
+      state.events[p.key].forEach(function (e) {
+        if (e.at < from || e.at > now) return;
+        var cx = x(e.at), m;
+        if (e.kind === 'all') m = svg('circle', { cx: cx, cy: cy, r: 6, class: 'm-all' });
+        else if (e.kind === 'partial') m = svg('circle', { cx: cx, cy: cy, r: 5, class: 'm-partial' });
+        else if (e.kind === 'banked') m = svg('rect', { x: cx - 5, y: cy - 5, width: 10, height: 10, class: 'm-banked' });
+        else m = svg('line', { x1: cx, x2: cx, y1: cy - 7, y2: cy + 7, class: 'm-change' });
+        m.appendChild(svg('title', {}, p.name + ' · ' + KIND[e.kind] + ' · ' + fmt(e.at)));
+        s.appendChild(m);
+      });
+    });
+    var box = document.getElementById('strip');
+    box.textContent = '';
+    box.appendChild(s);
+  }
+
+  function renderLog() {
+    var all = [];
+    PRODUCTS.forEach(function (p) { state.events[p.key].forEach(function (e) { all.push({ p: p, e: e }); }); });
+    all.sort(function (a, b) { return b.e.at - a.e.at; });
+    var ul = document.getElementById('log');
+    ul.textContent = '';
+    all.slice(0, logLimit).forEach(function (it) {
+      var li = node('li');
+      var tm = node('time', null, fmt(it.e.at, true));
+      tm.dateTime = new Date(it.e.at).toISOString();
+      li.appendChild(tm);
+      li.appendChild(node('span', 'who', it.p.name));
+      var what = node('span', 'what');
+      what.appendChild(node('span', 'chip k-' + it.e.kind, KIND[it.e.kind]));
+      what.appendChild(document.createTextNode((it.e.scope ? '（' + it.e.scope + '）' : '') + (it.e.note || '')));
+      li.appendChild(what);
+      li.appendChild(link(it.e.url, '原帖 ↗', 'src'));
+      ul.appendChild(li);
+    });
+    document.getElementById('more').hidden = all.length <= logLimit;
+  }
+
+  function renderHealth() {
+    var ul = document.getElementById('health');
+    ul.textContent = '';
+    Object.keys(state.health).forEach(function (k) {
+      var h = state.health[k];
+      ul.appendChild(node('li', h.ok ? '' : 'fail', (h.ok ? '✓ ' : '✗ ') + k));
+    });
+    var live = document.getElementById('live');
+    var anyOk = state.health['claude-resets'] && state.health['claude-resets'].ok || state.health.tokenusage && state.health.tokenusage.ok;
+    live.classList.toggle('stale', !anyOk);
+    live.textContent = (anyOk ? '实时 · 每分钟刷新 · ' : '数据源暂时连不上 · ') + '检查于 ' +
+      new Date(state.checkedAt).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+  }
+
+  function render() { renderCards(); renderStrip(); renderLog(); renderHealth(); }
+
+  var lastRelease = 0;
+  function refresh() {
+    var jobs = [loadResets(), loadStatus()];
+    if (Date.now() - lastRelease > 30 * 60000) { lastRelease = Date.now(); jobs.push(loadReleases()); }
+    return Promise.all(jobs).then(function () { state.checkedAt = Date.now(); render(); });
+  }
+
+  document.getElementById('more').addEventListener('click', function () { logLimit += 30; renderLog(); });
+  refresh();
+  setInterval(refresh, 60000);
+  setInterval(tick, 1000);
+  // Catch up right away when the tab comes back after being in the background.
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && Date.now() - (state.checkedAt || 0) > 60000) refresh(); });
+})();
+</script>
+</body>
+</html>
