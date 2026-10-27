@@ -10,7 +10,7 @@
 :root {
   --bg: #ffffff; --surface: #ffffff; --fg: #0a0a0a; --muted: #6b6b6b; --faint: #a3a3a3;
   --line: #e6e6e6; --hover: #f3f3f3; --inv-bg: #0a0a0a; --inv-fg: #ffffff;
-  --ok: #1f9d55; --bad: #d4351c;
+  --ok: #1f9d55; --bad: #d4351c; --warn: #b26a00;
   --font-display: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", serif;
   --font-body: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
   --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
@@ -18,7 +18,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #0a0a0a; --surface: #111111; --fg: #f5f5f5; --muted: #9a9a9a; --faint: #5c5c5c;
-    --line: #262626; --hover: #1a1a1a; --inv-bg: #f5f5f5; --inv-fg: #0a0a0a; --ok: #3ccf7a; --bad: #ff6a4d; color-scheme: dark; }
+    --line: #262626; --hover: #1a1a1a; --inv-bg: #f5f5f5; --inv-fg: #0a0a0a; --ok: #3ccf7a; --bad: #ff6a4d; --warn: #f0a83a; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -47,6 +47,13 @@ h1 { font: 900 clamp(2rem, 5vw, 2.75rem)/1.2 var(--font-display); text-wrap: bal
 .pill.ok::before { background: var(--ok); }
 .pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, var(--bg)); }
 .pill.bad::before { background: var(--bad); }
+.pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--bg)); }
+.pill.warn::before { background: var(--warn); }
+.incident { display: flex; gap: 10px; align-items: baseline; font-size: 0.8125rem; color: var(--muted); padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 8%, var(--bg)); overflow-wrap: anywhere; min-width: 0; }
+.incident.bad { background: color-mix(in srgb, var(--bad) 8%, var(--bg)); }
+.incident .state { flex: none; font: 600 0.75rem/1.6 var(--font-body); color: var(--warn); white-space: nowrap; }
+.incident.bad .state { color: var(--bad); }
+.incident a { color: var(--fg); text-underline-offset: 3px; min-width: 0; }
 .big { display: grid; gap: 4px; }
 .big .label { font-size: 0.8125rem; color: var(--muted); }
 .big .value { font: 600 clamp(2rem, 6vw, 3rem)/1.1 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
@@ -133,7 +140,7 @@ footer a { color: var(--muted); }
 
   <footer>
     <ul class="health" id="health" aria-label="数据源状态"></ul>
-    <p>数据来源：<a href="https://claude-resets.com/" target="_blank" rel="noopener noreferrer">claude-resets.com</a>（跟踪 @ClaudeDevs 与 @thsottiaux）、<a href="https://tokenusage.dev/resets" target="_blank" rel="noopener noreferrer">tokenusage.dev</a>（跟踪 @thsottiaux）、<a href="https://status.openai.com" target="_blank" rel="noopener noreferrer">OpenAI</a> 与 <a href="https://status.claude.com" target="_blank" rel="noopener noreferrer">Claude</a> 官方状态页、GitHub 发布记录。两个来源对同一次 Codex 重置有时会引用不同的帖子，相隔 12 小时内的记录合并为一次，以最早的时间为准。一切以原帖为准。</p>
+    <p>数据来源：<a href="https://claude-resets.com/" target="_blank" rel="noopener noreferrer">claude-resets.com</a>（跟踪 @ClaudeDevs 与 @thsottiaux）、<a href="https://tokenusage.dev/resets" target="_blank" rel="noopener noreferrer">tokenusage.dev</a>（跟踪 @thsottiaux）、<a href="https://status.openai.com" target="_blank" rel="noopener noreferrer">OpenAI</a> 与 <a href="https://status.claude.com" target="_blank" rel="noopener noreferrer">Claude</a> 官方状态页、npm 上的正式版本号。两个来源对同一次 Codex 重置有时会引用不同的帖子，相隔 12 小时内的记录合并为一次，以最早的时间为准。一切以原帖为准。</p>
     <p>由 <a href="https://x.com/mingjuntx" target="_blank" rel="noopener noreferrer">mingjuntx</a> 制作</p>
   </footer>
 </main>
@@ -142,10 +149,14 @@ footer a { color: var(--muted); }
 (function () {
   var DAY = 86400000, NS = 'http://www.w3.org/2000/svg';
   var KIND = { all: '全员重置', partial: '部分重置', banked: '重置卡', change: '限额调整' };
+  // match: which open incidents on that status page concern this product (by affected component or by name).
   var PRODUCTS = [
-    { key: 'codex', name: 'Codex', status: 'https://status.openai.com', component: 'Codex in ChatGPT Desktop', repo: 'openai/codex' },
-    { key: 'claude', name: 'Claude Code', status: 'https://status.claude.com', component: 'Claude Code', repo: 'anthropics/claude-code' }
+    { key: 'codex', name: 'Codex', status: 'https://status.openai.com', component: 'Codex in ChatGPT Desktop',
+      npm: '@openai/codex', release: 'https://github.com/openai/codex/releases/tag/rust-v', match: /codex|code review|security review/i },
+    { key: 'claude', name: 'Claude Code', status: 'https://status.claude.com', component: 'Claude Code',
+      npm: '@anthropic-ai/claude-code', release: 'https://github.com/anthropics/claude-code/releases/tag/v', match: /claude code/i }
   ];
+  var INCIDENT_STATE = { investigating: '调查中', identified: '已定位原因', monitoring: '已修复，观察中' };
   var state = { events: { codex: [], claude: [] }, status: {}, release: {}, health: {}, checkedAt: null };
   var logLimit = 30;
 
@@ -208,26 +219,32 @@ footer a { color: var(--muted); }
         var comp = (j.components || []).filter(function (c) { return c.name === p.component; })[0];
         state.status[p.key] = {
           component: comp ? comp.status : (j.status && j.status.indicator === 'none' ? 'operational' : 'unknown'),
-          incidents: (j.incidents || []).filter(function (i) { return i.status !== 'resolved'; }).map(function (i) { return i.name; })
+          incidents: (j.incidents || []).filter(function (i) {
+            if (i.status === 'resolved' || i.status === 'postmortem') return false;
+            var comps = (i.components || []).map(function (c) { return c.name; });
+            return comps.indexOf(p.component) >= 0 || p.match.test(i.name) || comps.some(function (n) { return p.match.test(n); });
+          }).map(function (i) {
+            return { name: i.name, state: i.status, impact: i.impact, url: i.shortlink || p.status };
+          })
         };
         mark(p.key === 'codex' ? 'OpenAI 状态页' : 'Claude 状态页', true);
       }, function () { mark(p.key === 'codex' ? 'OpenAI 状态页' : 'Claude 状态页', false); });
     }));
   }
 
-  // GitHub allows 60 unauthenticated requests an hour per visitor, so releases refresh every 30 minutes
-  // after a success, and are retried on the next minute's refresh after a failure.
+  // Versions come from the npm registry's "latest" tag (the stable release both CLIs ship through).
+  // GitHub's API was tried first, but its 60-requests-an-hour limit is shared by everyone behind the
+  // same IP, so it runs out for visitors on common proxies. Refreshed every 30 minutes after a success.
   var lastRelease = 0;
   function loadReleases() {
     return Promise.all(PRODUCTS.map(function (p) {
-      // /releases/latest is one small object and already skips drafts and pre-releases.
-      return getJSON('https://api.github.com/repos/' + p.repo + '/releases/latest').then(function (r) {
-        state.release[p.key] = { tag: (r.name || r.tag_name).replace(/^rust-v|^v/, ''), url: r.html_url };
+      return getJSON('https://registry.npmjs.org/' + p.npm.replace('/', '%2F') + '/latest').then(function (r) {
+        state.release[p.key] = { tag: r.version, url: p.release + r.version };
         return true;
       }, function () { return false; });
     })).then(function (ok) {
       var all = ok.every(Boolean);
-      mark('GitHub', all);
+      mark('版本号', all);
       if (all) lastRelease = Date.now();
     });
   }
@@ -253,13 +270,24 @@ footer a { color: var(--muted); }
       var c = node('article', 'card');
       var top = node('div', 'top');
       top.appendChild(node('h2', null, p.name));
+      // Red only while something is actually broken; an incident that is fixed and being watched,
+      // or that the status page rates as no impact, shows amber.
       var st = state.status[p.key];
       var pill = link(p.status, '', 'pill');
+      var open = st ? st.incidents : [];
+      var serious = open.filter(function (i) { return i.state !== 'monitoring' && i.impact !== 'none'; });
       if (!st) pill.textContent = '状态未知';
-      else if (st.component === 'operational' && !st.incidents.length) { pill.classList.add('ok'); pill.textContent = '服务正常'; }
-      else { pill.classList.add('bad'); pill.textContent = st.incidents[0] ? '故障：' + st.incidents[0] : '服务异常'; pill.title = pill.textContent; }
+      else if (serious.length || (st.component !== 'operational' && st.component !== 'unknown')) { pill.classList.add('bad'); pill.textContent = '服务故障'; }
+      else if (open.length) { pill.classList.add('warn'); pill.textContent = '有事件，影响较小'; }
+      else { pill.classList.add('ok'); pill.textContent = '服务正常'; }
       top.appendChild(pill);
       c.appendChild(top);
+      open.forEach(function (i) {
+        var row = node('p', 'incident ' + (serious.indexOf(i) >= 0 ? 'bad' : 'warn'));
+        row.appendChild(node('span', 'state', INCIDENT_STATE[i.state] || i.state));
+        row.appendChild(link(i.url, i.name));
+        c.appendChild(row);
+      });
 
       var big = node('div', 'big');
       big.appendChild(node('span', 'label', '距上次重置'));
