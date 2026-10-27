@@ -149,8 +149,13 @@ footer a { color: var(--muted); }
   var state = { events: { codex: [], claude: [] }, status: {}, release: {}, health: {}, checkedAt: null };
   var logLimit = 30;
 
+  // A request that hangs would hold up everything waiting on it, so each one gives up after 15 seconds.
   function getJSON(url) {
-    return fetch(url, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 15000) : null;
+    return fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (j) { clearTimeout(timer); return j; }, function (err) { clearTimeout(timer); throw err; });
   }
   function mark(name, ok) { state.health[name] = { ok: ok, at: Date.now() }; }
 
@@ -210,15 +215,21 @@ footer a { color: var(--muted); }
     }));
   }
 
-  // GitHub allows 60 unauthenticated requests an hour per visitor, so releases refresh every 30 minutes.
+  // GitHub allows 60 unauthenticated requests an hour per visitor, so releases refresh every 30 minutes
+  // after a success, and are retried on the next minute's refresh after a failure.
+  var lastRelease = 0;
   function loadReleases() {
     return Promise.all(PRODUCTS.map(function (p) {
-      return getJSON('https://api.github.com/repos/' + p.repo + '/releases?per_page=15').then(function (list) {
-        var r = list.filter(function (x) { return !x.prerelease && !x.draft; })[0] || list[0];
-        if (r) state.release[p.key] = { tag: (r.name || r.tag_name).replace(/^rust-v|^v/, ''), url: r.html_url };
-        mark('GitHub', true);
-      }, function () { mark('GitHub', false); });
-    }));
+      // /releases/latest is one small object and already skips drafts and pre-releases.
+      return getJSON('https://api.github.com/repos/' + p.repo + '/releases/latest').then(function (r) {
+        state.release[p.key] = { tag: (r.name || r.tag_name).replace(/^rust-v|^v/, ''), url: r.html_url };
+        return true;
+      }, function () { return false; });
+    })).then(function (ok) {
+      var all = ok.every(Boolean);
+      mark('GitHub', all);
+      if (all) lastRelease = Date.now();
+    });
   }
 
   function fmt(t, withYear) {
@@ -369,11 +380,15 @@ footer a { color: var(--muted); }
 
   function render() { renderCards(); renderStrip(); renderLog(); renderHealth(); }
 
-  var lastRelease = 0;
+  // Each source redraws the page as soon as it answers, so one slow source never blanks the others.
+  var busy = false;
   function refresh() {
-    var jobs = [loadResets(), loadStatus()];
-    if (Date.now() - lastRelease > 30 * 60000) { lastRelease = Date.now(); jobs.push(loadReleases()); }
-    return Promise.all(jobs).then(function () { state.checkedAt = Date.now(); render(); });
+    if (busy) return;
+    busy = true;
+    function done() { state.checkedAt = Date.now(); render(); }
+    var jobs = [loadResets().then(done), loadStatus().then(done)];
+    if (Date.now() - lastRelease > 30 * 60000) jobs.push(loadReleases().then(done));
+    Promise.all(jobs).then(function () { busy = false; }, function () { busy = false; });
   }
 
   document.getElementById('more').addEventListener('click', function () { logLimit += 30; renderLog(); });
